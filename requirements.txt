@@ -1,0 +1,6 @@
+ipykernel
+pandas
+streamlit
+gspread
+python-dotenv
+pytz
