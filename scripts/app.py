@@ -34,12 +34,12 @@ def create_database():
     # Cria a tabela se ela não existir, removendo o campo UUID
     c.execute('''CREATE TABLE IF NOT EXISTS motoristas (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    filial TEXT,
-                    nome TEXT,
+                    unidade TEXT,
+                    motorista TEXT,
                     placa TEXT,
-                    chegada TEXT,
-                    entrada_cd TEXT,
-                    saida_cd TEXT,
+                    chegada_cd TEXT,
+                    inicio_carregamento TEXT,
+                    fim_carregamento TEXT,
                     quantidade_remessas INTEGER
                 )''')
     conn.commit()
@@ -50,11 +50,11 @@ def salvar_no_sqlite(data):
     c = conn.cursor()
     
     # Insere os dados no banco de dados
-    c.execute('''INSERT INTO motoristas (filial, nome, placa, chegada, entrada_cd, saida_cd, quantidade_remessas) 
+    c.execute('''INSERT INTO motoristas (unidade, motorista, placa, chegada_cd, inicio_carregamento, fim_carregamento, quantidade_remessas) 
                  VALUES (?, ?, ?, ?, ?, ?, ?)''', 
-              (data['Filial'], data['Nome'], 
-               data['Placa'], data.get('Chegada', ''), 
-               data.get('Entrada CD', ''), data.get('Saída CD', ''), 
+              (data['Unidade'], data['Nome'], 
+               data['Placa'], data.get('Chegada CD', ''), 
+               data.get('Início do Carregamento', ''), data.get('Fim do Carregamento', ''), 
                data.get('Quantidade Remessas', 0)))
     
     conn.commit()
@@ -71,7 +71,7 @@ def visualizar_registros_sqlite():
     conn.close()
     
     if registros:
-        df = pd.DataFrame(registros, columns=['ID', 'Filial', 'Nome', 'Placa', 'Chegada', 'Entrada CD', 'Saída CD', 'Quantidade Remessas'])
+        df = pd.DataFrame(registros, columns=['ID', 'Unidade', 'Motorista', 'Placa', 'Chegada CD', 'Início do Carregamento', 'Fim do Carregamento', 'Quantidade Remessas'])
         # Remove duplicatas mantendo a última ocorrência de cada motorista
         df_unique = df.drop_duplicates(subset='Placa', keep='last')
         st.dataframe(df_unique)
@@ -85,108 +85,148 @@ st.sidebar.title("Navegação")
 page = st.sidebar.radio("Escolha a página", ["Check-in Motoristas", "Visualização de Registros", "Relatório de Registros"])
 
 def motoristas():
-    # Inicializa um dicionário para armazenar dados temporários no session_state
-    if 'data_temp' not in st.session_state:
-        st.session_state.data_temp = {
-            'Filial': '',
-            'Nome': '',
-            'Placa': '',
-            'Chegada': '',
-            'Entrada CD': '',
-            'Saída CD': '',
-            'Quantidade Remessas': ''
-        }
-
-    # Inicializa um contador de etapas no session_state
-    if 'step' not in st.session_state:
-        st.session_state.step = 0  # Primeiro passo é a introdução
-
-    # Função para registrar o horário atual
-    def registrar_horario(campo):
-        br_tz = pytz.timezone('America/Sao_Paulo')
-        st.session_state.data_temp[campo] = datetime.now(br_tz).strftime('%Y-%m-%d %H:%M:%S')
-
-    # Função para salvar os dados no Google Sheets
-    def salvar_no_sheets(dados):
-        dados_lista = list(dados.values())
-        worksheet.append_row(dados_lista)
+    st.title("Check-in de Motoristas")
 
     # Lista de filiais
     lista_filiais = [
-        "HVGI - VILA GUILHERME",
-        "HUDI - UBERLÂNDIA",
-        "HRAO - RIBEIRÃO PRETO",
-        "HPPB - PRESIDENTE PRUDENTE",
-        "HPLH - PALHOÇA",
-        "OSA LM - OSASCO",
-        "HITJ - ITAJAÍ",
-        "HBHZ - BETIM",
-        "HRIO - RIO DE JANEIRO",
-        "HPOA - PORTO ALEGRE ( GRAVATAÍ)",
-        "HLDB - LONDRINA",
-        "HJAB - JABOATÃO DOS GUARARAPES",
-        "HSSA - SALVADOR",
-        "HCWB - CURITIBA",
-        "HBSB - BRASILIA",
-        "HGRU - GUARULHOS",
-        "HFOR - FORTALEZA",
-        "HFCA - FRANCA",
-        "HCPQ - CAMPINAS",
-        "HBAU - BAURU",
-        "HARU - ARAÇATUBA"
+        "HVGI - VILA GUILHERME", "HUDI - UBERLÂNDIA", "HRAO - RIBEIRÃO PRETO",
+        "HPPB - PRESIDENTE PRUDENTE", "HPLH - PALHOÇA", "OSA LM - OSASCO",
+        "HITJ - ITAJAÍ", "HBHZ - BETIM", "HRIO - RIO DE JANEIRO", 
+        "HPOA - PORTO ALEGRE ( GRAVATAÍ)", "HLDB - LONDRINA", 
+        "HJAB - JABOATÃO DOS GUARARAPES", "HSSA - SALVADOR", "HCWB - CURITIBA", 
+        "HBSB - BRASILIA", "HGRU - GUARULHOS", "HFOR - FORTALEZA", 
+        "HFCA - FRANCA", "HCPQ - CAMPINAS", "HBAU - BAURU", "HARU - ARAÇATUBA"
     ]
 
-    # Step 0: Introdução
-    if st.session_state.step == 0:
-        st.title("Check-in de Motoristas.")
-        st.write("Clique no botão abaixo para iniciar o processo de check-in.")
-        
-        if st.button("Iniciar Check-in"):
-            st.session_state.step = 1  # Avança diretamente para o passo 1
+    # Seleção da etapa do check-in
+    subpagina = st.selectbox("Escolha a etapa", ["Chegada CD", "Início do Carregamento", "Fim do Carregamento"])
+
+    # Função para registrar o horário atual
+    def registrar_horario():
+        br_tz = pytz.timezone('America/Sao_Paulo')
+        return datetime.now(br_tz).strftime('%Y-%m-%d %H:%M:%S')
 
     # Step 1: Coleta de informações de chegada
-    elif st.session_state.step == 1:
-        st.session_state.data_temp['Filial'] = st.selectbox("Filial", lista_filiais, index=0)
-        st.session_state.data_temp['Nome'] = st.text_input("Nome do Motorista", st.session_state.data_temp['Nome'])
-        st.session_state.data_temp['Placa'] = st.text_input("Placa do Veículo", st.session_state.data_temp['Placa'])
+    if subpagina == "Chegada CD":
+        filial = st.selectbox("Filial", lista_filiais, index=0)
+        nome = st.text_input("Nome do Motorista")
+        placa = st.text_input("Placa do Veículo", '').upper()  # Converte a placa para maiúsculas
 
-        if st.button("Registrar Horário de Chegada"):
-            registrar_horario('Chegada')
-            st.success(f"Horário de Chegada registrado: {st.session_state.data_temp['Chegada']}")
-            salvar_no_sqlite(st.session_state.data_temp)  # Salva no SQLite
-            st.session_state.step += 1  # Avança para o próximo passo automaticamente
+        if st.button("Check"):
+            if not placa:  # Valida se a placa foi inserida
+                st.error("Por favor, insira a placa do veículo.")
+            else:
+                chegada = registrar_horario()
+                dados_motorista = {
+                    'Unidade': filial,
+                    'Nome': nome,
+                    'Placa': placa,
+                    'Chegada CD': chegada,
+                    'Início do Carregamento': '',
+                    'Fim do Carregamento': '',
+                    'Quantidade Remessas': 0
+                }
+                salvar_no_sqlite(dados_motorista)  # Salva no SQLite
+                st.success(f"Horário de Chegada registrado: {chegada}")
 
     # Step 2: Coleta de informações de entrada no CD
-    elif st.session_state.step == 2:
-        st.write("Etapa 2: Entrada no CD")
-
-        if st.button("Registrar Horário de Entrada no CD"):
-            registrar_horario('Entrada CD')
-            st.success(f"Horário de Entrada registrado: {st.session_state.data_temp['Entrada CD']}")
-            salvar_no_sqlite(st.session_state.data_temp)  # Salva no SQLite
-            st.session_state.step += 1  # Avança para o próximo passo automaticamente
+    elif subpagina == "Início do Carregamento":
+        placa = st.text_input("Placa do Veículo", '').upper()  # Permite que o motorista insira a placa novamente
+        if st.button("Check"):
+            if not placa:  # Valida se a placa foi inserida
+                st.error("Por favor, insira a placa do veículo.")
+            else:
+                entrada_cd = registrar_horario()
+                # Atualiza a entrada no SQLite
+                conn = sqlite3.connect('dados_motoristas.db')
+                c = conn.cursor()
+                c.execute('''UPDATE motoristas SET inicio_carregamento = ? WHERE placa = ?''', 
+                          (entrada_cd, placa))
+                conn.commit()
+                conn.close()
+                st.success(f"Horário de Entrada registrado: {entrada_cd}")
 
     # Step 3: Coleta de informações de saída do CD e quantidade de remessas
-    elif st.session_state.step == 3:
-        st.write("Etapa 3: Saída do CD e Quantidade de Remessas")
+    elif subpagina == "Fim do Carregamento":
+        placa = st.text_input("Placa do Veículo", '').upper()  # Permite que o motorista insira a placa novamente
+        quantidade_remessas = st.number_input("Quantidade de Remessas", min_value=0, value=0)
 
-        st.session_state.data_temp['Quantidade Remessas'] = st.number_input(
-            "Quantidade de Remessas", min_value=0, value=int(st.session_state.data_temp['Quantidade Remessas'] or 0)
-        )
+        if st.button("Check"):
+            if not placa:  # Valida se a placa foi inserida
+                st.error("Por favor, insira a placa do veículo.")
+            else:
+                saida_cd = registrar_horario()
+                # Atualiza a saída e quantidade de remessas no SQLite
+                conn = sqlite3.connect('dados_motoristas.db')
+                c = conn.cursor()
+                c.execute('''UPDATE motoristas SET fim_carregamento = ?, quantidade_remessas = ? WHERE placa = ?''', 
+                          (saida_cd, quantidade_remessas, placa))
+                conn.commit()
+                conn.close()
+                st.success(f"Horário de Saída registrado: {saida_cd}")
+                st.success("Check-in registrado com sucesso!")
 
-        if st.button("Registrar Horário de Saída do CD"):
-            registrar_horario('Saída CD')
-            st.success(f"Horário de Saída registrado: {st.session_state.data_temp['Saída CD']}")
-            salvar_no_sqlite(st.session_state.data_temp)  # Salva no SQLite
-            salvar_no_sheets(st.session_state.data_temp)  # Envia os dados para o Google Sheets
-            st.success("Check-in registrado com sucesso!")
-            st.session_state.step = 0  # Reinicia o processo
+def salvar_no_sheets(dados):
+    dados_lista = list(dados.values())
+    worksheet.append_row(dados_lista)
+
+def visualizar_registros_sqlite():
+    conn = sqlite3.connect('dados_motoristas.db')
+    c = conn.cursor()
+    
+    c.execute("SELECT * FROM motoristas")
+    registros = c.fetchall()  # Obtém todos os registros
+    
+    conn.close()
+    
+    if registros:
+        df = pd.DataFrame(registros, columns=['ID', 'Unidade', 'Motorista', 'Placa', 'Chegada CD', 'Início do Carregamento', 'Fim do Carregamento', 'Quantidade Remessas'])
+        # Remove duplicatas mantendo a última ocorrência de cada motorista
+        df_unique = df.drop_duplicates(subset='Placa', keep='last')
+        st.dataframe(df_unique)
+        return df_unique
+    else:
+        st.write("Nenhum registro encontrado no banco de dados.")
+        return pd.DataFrame()  # Retorna um DataFrame vazio se não houver registros
 
 def registros():
     st.title("Visualização - SQLITE3")
     st.write("Após preencher cada etapa de check-in, os dados são enviados para o Banco de Dados SQLITE3 e armazenados para gerar uma visualização em tempo real.")
+
+    # Exibe os registros do SQLite e obtém o DataFrame
+    df_registros = visualizar_registros_sqlite()  # Chama a função para visualizar os registros do SQLite
     
-    visualizar_registros_sqlite()  # Chama a função para visualizar os registros do SQLite
+    # Adiciona um botão para enviar dados completos para o Google Sheets
+    if st.button("Enviar dados completos para o Google Sheets"):
+        enviados = 0
+        erros = 0
+        
+        for index, registro in df_registros.iterrows():
+            # Verifica se todos os campos estão preenchidos
+            if all(pd.notna(registro[1:])):  # Ignora o primeiro campo (ID)
+                # Monta o dicionário de dados
+                dados_motorista = {
+                    'Unidade': registro['Unidade'],
+                    'Nome': registro['Motorista'],
+                    'Placa': registro['Placa'],
+                    'Chegada CD': registro['Chegada CD'],
+                    'Início do Carregamento': registro['Início do Carregamento'],
+                    'Fim do Carregamento': registro['Fim do Carregamento'],
+                    'Quantidade Remessas': registro['Quantidade Remessas']
+                }
+                # Envia os dados para o Google Sheets
+                try:
+                    salvar_no_sheets(dados_motorista)
+                    enviados += 1
+                except Exception as e:
+                    st.error(f"Erro ao enviar dados da placa {registro['Placa']}: {str(e)}")
+                    erros += 1
+        
+        # Mensagens de feedback
+        if enviados > 0:
+            st.success(f"{enviados} registros enviados para o Google Sheets com sucesso!")
+        if erros > 0:
+            st.error(f"{erros} registros não foram enviados devido a erros.")
 
 def relatorio_registros():
     st.title("Visualização - Google Sheets")
