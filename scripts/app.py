@@ -17,6 +17,10 @@ load_dotenv()
 # Obtém a variável de ambiente KEY_JSON
 key_json = os.getenv('KEY_JSON')
 
+# Obter credenciais do arquivo .env
+USERNAME_KEY = os.getenv('USERNAME_KEY')
+PASSWORD_KEY = os.getenv('PASSWORD_KEY')
+
 # Converte a string JSON em um dicionário Python
 google_client = gspread.service_account_from_dict(json.loads(key_json))
 
@@ -248,10 +252,42 @@ def relatorio_registros():
         st.write("Abaixo estão os registros dos motoristas:")
         st.dataframe(df)
 
+# Função de Login
+def login():
+    st.title("Tela de Login")
+    username = st.text_input("Usuário")
+    password = st.text_input("Senha", type='password')
+
+    if st.button("Entrar"):
+        if username == USERNAME_KEY and password == PASSWORD_KEY:
+            st.session_state['authenticated'] = True
+            st.success("Login bem-sucedido!")
+        else:
+            st.error("Usuário ou senha inválidos.")
+
+# Função de Logout
+def logout():
+    st.session_state['authenticated'] = False
+    st.success("Logout bem-sucedido!")
+
+# Inicializa o estado da sessão
+if 'authenticated' not in st.session_state:
+    st.session_state['authenticated'] = False
+
 # Roteamento de páginas
 if page == "Check-in Motoristas":
-    motoristas()
-elif page == "Visualização de Registros":
-    registros()
-elif page == "Relatório de Registros":
-    relatorio_registros()
+    motoristas()  # Função que lida com o check-in de motoristas
+elif page in ["Visualização de Registros", "Relatório de Registros"]:
+    # Verifica se o usuário está autenticado
+    if st.session_state['authenticated']:
+        if page == "Visualização de Registros":
+            registros()  # Função para visualizar registros
+        elif page == "Relatório de Registros":
+            relatorio_registros()  # Função para relatar registros
+    else:
+        login()  # Se não autenticado, exibe a tela de login
+
+# Adiciona um botão de logout na parte inferior
+if st.session_state['authenticated']:
+    if st.button("Sair"):
+        logout()
