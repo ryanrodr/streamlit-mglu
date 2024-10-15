@@ -254,7 +254,7 @@ def relatorio_registros():
 
 # Função de Login
 def login():
-    st.title("Tela de Login")
+    st.title("Acesso Interno Magalu")
     username = st.text_input("Usuário")
     password = st.text_input("Senha", type='password')
 
