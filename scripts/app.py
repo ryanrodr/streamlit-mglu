@@ -6,32 +6,26 @@ import os
 import pytz
 from datetime import datetime
 from dotenv import load_dotenv
-import sqlite3  # Importando SQLite
+import sqlite3
 
-# Identificador único da planilha do Google Sheets
-SHEET_ID = '1tbJh_GQol0Ax5uB-AjwI26yW9piCIp0peuKV1N5nMeQ'
-
-# Carrega as variáveis de ambiente do arquivo .env
+# Carrega variáveis de ambiente com load_dotenv
 load_dotenv()
-
-# Obtém a variável de ambiente KEY_JSON
-key_json = os.getenv('KEY_JSON')
-
-# Obter credenciais do arquivo .env
+KEY_JSON = os.getenv('KEY_JSON')
 USERNAME_KEY = os.getenv('USERNAME_KEY')
 PASSWORD_KEY = os.getenv('PASSWORD_KEY')
 
-# Converte a string JSON em um dicionário Python
-google_client = gspread.service_account_from_dict(json.loads(key_json))
-
-# Abre a planilha do Google Sheets usando o código único da planilha
+# Autenticação com Google Sheets e configuração de acesso a planilha
+google_client = gspread.service_account_from_dict(json.loads(KEY_JSON))
+SHEET_ID = '1tbJh_GQol0Ax5uB-AjwI26yW9piCIp0peuKV1N5nMeQ'
 spreadsheet = google_client.open_by_key(SHEET_ID)
-
-# Seleciona a aba chamada 'Dados' dentro da planilha
 worksheet = spreadsheet.worksheet('Dados')
 
+# Configurações iniciais do aplicativo
+st.sidebar.title("Navegação")
+page = st.sidebar.radio("Escolha a página", ["Check-in Motoristas", "Visualização de Registros"])
+
 # Função para criar a tabela no banco de dados SQLite
-def create_database():
+def database():
     conn = sqlite3.connect('dados_motoristas.db')
     c = conn.cursor()
     
@@ -49,7 +43,7 @@ def create_database():
     conn.commit()
     conn.close()
 
-def salvar_no_sqlite(data):
+def salvar_database(data):
     conn = sqlite3.connect('dados_motoristas.db')
     c = conn.cursor()
     
@@ -63,30 +57,28 @@ def salvar_no_sqlite(data):
     
     conn.commit()
     conn.close()
-    
-# Função para visualizar registros do SQLite
-def visualizar_registros_sqlite():
-    conn = sqlite3.connect('dados_motoristas.db')
-    c = conn.cursor()
-    
-    c.execute("SELECT * FROM motoristas")
-    registros = c.fetchall()  # Obtém todos os registros
-    
-    conn.close()
-    
-    if registros:
-        df = pd.DataFrame(registros, columns=['ID', 'Unidade', 'Motorista', 'Placa', 'Chegada CD', 'Início do Carregamento', 'Fim do Carregamento', 'Quantidade Remessas'])
-        # Remove duplicatas mantendo a última ocorrência de cada motorista
-        df_unique = df.drop_duplicates(subset='Placa', keep='last')
-        st.dataframe(df_unique)
+
+def salvar_sheets(dados):
+    if not dados_existentes(dados):
+        dados_lista = list(dados.values())
+        #st.write("Enviando dados para o Google Sheets:", dados_lista)  # Debug
+        worksheet.append_row(dados_lista)
+        return True
     else:
-        st.write("Nenhum registro encontrado no banco de dados.")
+        st.warning(f"Registro já existente para a placa {dados['Placa']}.")  # Melhor mensagem de aviso
+        return False
 
-# Chama a função para criar a tabela ao iniciar o app
-create_database()
+def dados_existentes(dados_motorista):
+    # Carregar os dados da planilha
+    existing_data = worksheet.get_all_records()
+    df_existing = pd.DataFrame(existing_data)
 
-st.sidebar.title("Navegação")
-page = st.sidebar.radio("Escolha a página", ["Check-in Motoristas", "Visualização de Registros", "Relatório de Registros"])
+    # Verificar se o registro já existe
+    return df_existing[
+        (df_existing['Unidade'] == dados_motorista['Unidade']) &
+        (df_existing['Nome'] == dados_motorista['Nome']) &
+        (df_existing['Placa'] == dados_motorista['Placa'])
+    ].shape[0] > 0
 
 def motoristas():
     st.title("Check-in de Motoristas")
@@ -113,8 +105,8 @@ def motoristas():
     # Step 1: Coleta de informações de chegada
     if subpagina == "Chegada CD":
         filial = st.selectbox("Filial", lista_filiais, index=0)
-        nome = st.text_input("Nome do Motorista")
-        placa = st.text_input("Placa do Veículo", '').upper()  # Converte a placa para maiúsculas
+        nome = st.text_input("Nome do Motorista").upper()
+        placa = st.text_input("Placa do Veículo", '').upper()
 
         if st.button("Check"):
             if not placa:  # Valida se a placa foi inserida
@@ -130,7 +122,7 @@ def motoristas():
                     'Fim do Carregamento': '',
                     'Quantidade Remessas': 0
                 }
-                salvar_no_sqlite(dados_motorista)  # Salva no SQLite
+                salvar_database(dados_motorista)  # Salva no SQLite
                 st.success(f"Horário de Chegada registrado: {chegada}")
 
     # Step 2: Coleta de informações de entrada no CD
@@ -161,7 +153,7 @@ def motoristas():
             else:
                 saida_cd = registrar_horario()
                 # Atualiza a saída e quantidade de remessas no SQLite
-                conn = sqlite3.connect('dados_motoristas.db')
+                conn = sqlite3.connect('dados_motoristas3.db')
                 c = conn.cursor()
                 c.execute('''UPDATE motoristas SET fim_carregamento = ?, quantidade_remessas = ? WHERE placa = ?''', 
                           (saida_cd, quantidade_remessas, placa))
@@ -170,11 +162,7 @@ def motoristas():
                 st.success(f"Horário de Saída registrado: {saida_cd}")
                 st.success("Check-in registrado com sucesso!")
 
-def salvar_no_sheets(dados):
-    dados_lista = list(dados.values())
-    worksheet.append_row(dados_lista)
-
-def visualizar_registros_sqlite():
+def registros_sqlite():
     conn = sqlite3.connect('dados_motoristas.db')
     c = conn.cursor()
     
@@ -187,70 +175,75 @@ def visualizar_registros_sqlite():
         df = pd.DataFrame(registros, columns=['ID', 'Unidade', 'Motorista', 'Placa', 'Chegada CD', 'Início do Carregamento', 'Fim do Carregamento', 'Quantidade Remessas'])
         # Remove duplicatas mantendo a última ocorrência de cada motorista
         df_unique = df.drop_duplicates(subset='Placa', keep='last')
-        st.dataframe(df_unique)
-        return df_unique
+        return df_unique  # Retorna o DataFrame sem exibir aqui
     else:
-        st.write("Nenhum registro encontrado no banco de dados.")
         return pd.DataFrame()  # Retorna um DataFrame vazio se não houver registros
 
 def registros():
-    st.title("Visualização - SQLITE3")
-    st.write("Após preencher cada etapa de check-in, os dados são enviados para o Banco de Dados SQLITE3 e armazenados para gerar uma visualização em tempo real.")
+    st.title("Visualização de Registros")
+    st.write("Os dados são atualizados em tempo real conforme o processo de check-in é concluído.")
 
-    # Exibe os registros do SQLite e obtém o DataFrame
-    df_registros = visualizar_registros_sqlite()  # Chama a função para visualizar os registros do SQLite
+    # Chama a função para visualizar os registros do SQLite
+    df_registros = registros_sqlite()
+
+    if df_registros.empty:  # Verifica se o DataFrame está vazio
+        st.warning("Nenhum registro encontrado.")
+        return  # Se estiver vazio, sai da função e não exibe mais nada
     
-    # Adiciona um botão para enviar dados completos para o Google Sheets
-    if st.button("Enviar dados completos para o Google Sheets"):
-        enviados = 0
-        erros = 0
-        
-        for index, registro in df_registros.iterrows():
-            # Verifica se todos os campos estão preenchidos
-            if all(pd.notna(registro[1:])):  # Ignora o primeiro campo (ID)
-                # Monta o dicionário de dados
-                dados_motorista = {
-                    'Unidade': registro['Unidade'],
-                    'Nome': registro['Motorista'],
-                    'Placa': registro['Placa'],
-                    'Chegada CD': registro['Chegada CD'],
-                    'Início do Carregamento': registro['Início do Carregamento'],
-                    'Fim do Carregamento': registro['Fim do Carregamento'],
-                    'Quantidade Remessas': registro['Quantidade Remessas']
-                }
-                # Envia os dados para o Google Sheets
+    # Obter a lista de unidades únicas
+    unidades = df_registros['Unidade'].unique().tolist()
+
+    # Adicionar um seletor de unidades para o usuário escolher
+    unidade_selecionada = st.selectbox("Selecione a Unidade para filtrar", ["Todas"] + unidades)
+
+    # Filtrar os dados pelo valor selecionado
+    if unidade_selecionada != "Todas":
+        df_registros = df_registros[df_registros['Unidade'] == unidade_selecionada]
+
+    # Exibe o DataFrame filtrado
+    st.dataframe(df_registros)
+
+    # Inicializa contadores
+    enviados = 0
+    erros = 0
+
+    # Verifica e envia dados automaticamente para o Google Sheets
+    for index, registro in df_registros.iterrows():
+        # Verifica se todos os campos estão preenchidos e se "Quantidade Remessas" é maior que 0
+        if all(pd.notna(registro[1:])) and registro['Quantidade Remessas'] > 0:  # Ignora o primeiro campo (ID)
+            # Monta o dicionário de dados
+            dados_motorista = {
+                'Unidade': registro['Unidade'],
+                'Nome': registro['Motorista'],
+                'Placa': registro['Placa'],
+                'Chegada CD': registro['Chegada CD'],
+                'Início do Carregamento': registro['Início do Carregamento'],
+                'Fim do Carregamento': registro['Fim do Carregamento'],
+                'Quantidade Remessas': registro['Quantidade Remessas']
+            }
+
+            # Verifica se os dados já existem no Google Sheets
+            if not dados_existentes(dados_motorista):
                 try:
-                    salvar_no_sheets(dados_motorista)
+                    salvar_sheets(dados_motorista)  # Envia os dados para o Google Sheets
                     enviados += 1
                 except Exception as e:
                     st.error(f"Erro ao enviar dados da placa {registro['Placa']}: {str(e)}")
                     erros += 1
-        
-        # Mensagens de feedback
-        if enviados > 0:
-            st.success(f"{enviados} registros enviados para o Google Sheets com sucesso!")
-        if erros > 0:
-            st.error(f"{erros} registros não foram enviados devido a erros.")
+            else:
+                st.warning(f"Registro já existente para a placa {registro['Placa']}. Não enviado.")
+        else:
+            # Mensagem se o registro não está completo
+            st.warning(f"Registro incompleto para a placa {registro['Placa']}. Não enviado.")
 
-def relatorio_registros():
-    st.title("Visualização - Google Sheets")
-    st.write("Aqui você pode visualizar os dados que foram preenchidos em todos os passos do check-in que foram enviados pela API do Google Sheets.")
+    # Mensagens de feedback
+    if enviados > 0:
+        st.success(f"{enviados} registros enviados automaticamente para o Google Sheets com sucesso!")
+    if erros > 0:
+        st.error(f"{erros} registros não foram enviados devido a erros.")
 
-    st.markdown("[Google Sheets](https://docs.google.com/spreadsheets/d/1tbJh_GQol0Ax5uB-AjwI26yW9piCIp0peuKV1N5nMeQ/edit?gid=2053463788#gid=2053463788)")
-
-    st.markdown("[Looker Studio](https://lookerstudio.google.com/reporting/e0ec9f83-6e17-4d18-9b44-7b6848f5002d)")
-
-    # Obtém todos os valores da worksheet (retorna uma lista de listas)
-    dados = worksheet.get_all_values()
-
-    # Verifica se a planilha contém dados
-    if len(dados) > 1:
-        # A primeira linha é usada como o cabeçalho (nomes das colunas)
-        df = pd.DataFrame(dados[1:], columns=dados[0])
-
-        # Exibe a tabela com os dados no Streamlit
-        st.write("Abaixo estão os registros dos motoristas:")
-        st.dataframe(df)
+# Chama a função para criar a tabela ao iniciar o app
+database()
 
 # Função de Login
 def login():
@@ -282,8 +275,6 @@ elif page in ["Visualização de Registros", "Relatório de Registros"]:
     if st.session_state['authenticated']:
         if page == "Visualização de Registros":
             registros()  # Função para visualizar registros
-        elif page == "Relatório de Registros":
-            relatorio_registros()  # Função para relatar registros
     else:
         login()  # Se não autenticado, exibe a tela de login
 
