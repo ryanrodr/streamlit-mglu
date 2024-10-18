@@ -153,7 +153,7 @@ def motoristas():
             else:
                 saida_cd = registrar_horario()
                 # Atualiza a saída e quantidade de remessas no SQLite
-                conn = sqlite3.connect('dados_motoristas3.db')
+                conn = sqlite3.connect('dados_motoristas.db')
                 c = conn.cursor()
                 c.execute('''UPDATE motoristas SET fim_carregamento = ?, quantidade_remessas = ? WHERE placa = ?''', 
                           (saida_cd, quantidade_remessas, placa))
