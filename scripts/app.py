@@ -26,7 +26,7 @@ page = st.sidebar.radio("Escolha a página", ["Check-in Motoristas", "Visualiza�
 
 # Função para criar a tabela no banco de dados SQLite
 def database():
-    conn = sqlite3.connect('dados_motoristas2.db')
+    conn = sqlite3.connect('dados_motoristas.db')
     c = conn.cursor()
     
     # Cria a tabela se não existir
@@ -44,7 +44,7 @@ def database():
     conn.close()
 
 def salvar_database(data):
-    conn = sqlite3.connect('dados_motoristas2.db')
+    conn = sqlite3.connect('dados_motoristas.db')
     c = conn.cursor()
     
     # Insere os dados no banco de dados
@@ -137,7 +137,7 @@ def motoristas():
             else:
                 entrada_cd = registrar_horario()
                 # Atualiza a entrada no SQLite
-                conn = sqlite3.connect('dados_motoristas2.db')
+                conn = sqlite3.connect('dados_motoristas.db')
                 c = conn.cursor()
                 c.execute('''UPDATE motoristas SET inicio_carregamento = ? WHERE placa = ?''', 
                           (entrada_cd, placa))
@@ -156,7 +156,7 @@ def motoristas():
             else:
                 saida_cd = registrar_horario()
                 # Atualiza a saída e quantidade de remessas no SQLite
-                conn = sqlite3.connect('dados_motoristas2.db')
+                conn = sqlite3.connect('dados_motoristas.db')
                 c = conn.cursor()
                 c.execute('''UPDATE motoristas SET fim_carregamento = ?, quantidade_remessas = ? WHERE placa = ?''', 
                           (saida_cd, quantidade_remessas, placa))
