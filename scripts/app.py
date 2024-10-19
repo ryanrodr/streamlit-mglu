@@ -14,11 +14,11 @@ KEY_JSON = os.getenv('KEY_JSON')
 USERNAME_KEY = os.getenv('USERNAME_KEY')
 PASSWORD_KEY = os.getenv('PASSWORD_KEY')
 
-# Autenticação com Google Sheets e configuração de acesso a planilha
+# Autenticação com Google Sheets
 google_client = gspread.service_account_from_dict(json.loads(KEY_JSON))
 SHEET_ID = '1tbJh_GQol0Ax5uB-AjwI26yW9piCIp0peuKV1N5nMeQ'
 spreadsheet = google_client.open_by_key(SHEET_ID)
-worksheet = spreadsheet.worksheet('Dados')
+worksheet = spreadsheet.worksheet('db')
 
 # Configurações iniciais do aplicativo
 st.sidebar.title("Navegação")
@@ -26,14 +26,14 @@ page = st.sidebar.radio("Escolha a página", ["Check-in Motoristas", "Visualiza�
 
 # Função para criar a tabela no banco de dados SQLite
 def database():
-    conn = sqlite3.connect('dados_motoristas.db')
+    conn = sqlite3.connect('dados_motoristas2.db')
     c = conn.cursor()
     
-    # Cria a tabela se ela não existir, removendo o campo UUID
+    # Cria a tabela se não existir
     c.execute('''CREATE TABLE IF NOT EXISTS motoristas (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     unidade TEXT,
-                    motorista TEXT,
+                    nome TEXT,
                     placa TEXT,
                     chegada_cd TEXT,
                     inicio_carregamento TEXT,
@@ -44,11 +44,11 @@ def database():
     conn.close()
 
 def salvar_database(data):
-    conn = sqlite3.connect('dados_motoristas.db')
+    conn = sqlite3.connect('dados_motoristas2.db')
     c = conn.cursor()
     
     # Insere os dados no banco de dados
-    c.execute('''INSERT INTO motoristas (unidade, motorista, placa, chegada_cd, inicio_carregamento, fim_carregamento, quantidade_remessas) 
+    c.execute('''INSERT INTO motoristas (unidade, nome, placa, chegada_cd, inicio_carregamento, fim_carregamento, quantidade_remessas) 
                  VALUES (?, ?, ?, ?, ?, ?, ?)''', 
               (data['Unidade'], data['Nome'], 
                data['Placa'], data.get('Chegada CD', ''), 
@@ -58,27 +58,30 @@ def salvar_database(data):
     conn.commit()
     conn.close()
 
-def salvar_sheets(dados):
-    if not dados_existentes(dados):
-        dados_lista = list(dados.values())
-        #st.write("Enviando dados para o Google Sheets:", dados_lista)  # Debug
-        worksheet.append_row(dados_lista)
-        return True
-    else:
-        st.warning(f"Registro já existente para a placa {dados['Placa']}.")  # Melhor mensagem de aviso
-        return False
-
 def dados_existentes(dados_motorista):
-    # Carregar os dados da planilha
-    existing_data = worksheet.get_all_records()
-    df_existing = pd.DataFrame(existing_data)
+    try:
+        existing_data = worksheet.get_all_records()
+        df_existing = pd.DataFrame(existing_data)
 
-    # Verificar se o registro já existe
-    return df_existing[
-        (df_existing['Unidade'] == dados_motorista['Unidade']) &
-        (df_existing['Nome'] == dados_motorista['Nome']) &
-        (df_existing['Placa'] == dados_motorista['Placa'])
-    ].shape[0] > 0
+        # Verifique se o DataFrame está vazio
+        if df_existing.empty:
+            st.warning("A planilha está vazia. Nenhum registro encontrado.")
+            return False  # Se a planilha está vazia, consideramos que não existem dados
+
+        # Verifique as colunas carregadas
+        if 'Unidade' not in df_existing.columns or 'Nome' not in df_existing.columns or 'Placa' not in df_existing.columns:
+            st.error("As colunas necessárias não estão disponíveis na planilha.")
+            return True  # Para evitar duplicatas, retornar True se não conseguir acessar
+
+        # Verificar se o registro já existe
+        return df_existing[
+            (df_existing['Unidade'] == dados_motorista['Unidade']) &
+            (df_existing['Nome'] == dados_motorista['Nome']) &
+            (df_existing['Placa'] == dados_motorista['Placa'])
+        ].shape[0] > 0
+    except Exception as e:
+        st.error(f"Ocorreu um erro ao ler os dados da planilha: {str(e)}")
+        return True  # Retornar True para evitar que dados duplicados sejam enviados
 
 def motoristas():
     st.title("Check-in de Motoristas")
@@ -127,14 +130,14 @@ def motoristas():
 
     # Step 2: Coleta de informações de entrada no CD
     elif subpagina == "Início do Carregamento":
-        placa = st.text_input("Placa do Veículo", '').upper()  # Permite que o motorista insira a placa novamente
+        placa = st.text_input("Placa do Veículo", '').upper()
         if st.button("Check"):
             if not placa:  # Valida se a placa foi inserida
                 st.error("Por favor, insira a placa do veículo.")
             else:
                 entrada_cd = registrar_horario()
                 # Atualiza a entrada no SQLite
-                conn = sqlite3.connect('dados_motoristas.db')
+                conn = sqlite3.connect('dados_motoristas2.db')
                 c = conn.cursor()
                 c.execute('''UPDATE motoristas SET inicio_carregamento = ? WHERE placa = ?''', 
                           (entrada_cd, placa))
@@ -144,7 +147,7 @@ def motoristas():
 
     # Step 3: Coleta de informações de saída do CD e quantidade de remessas
     elif subpagina == "Fim do Carregamento":
-        placa = st.text_input("Placa do Veículo", '').upper()  # Permite que o motorista insira a placa novamente
+        placa = st.text_input("Placa do Veículo", '').upper()
         quantidade_remessas = st.number_input("Quantidade de Remessas", min_value=0, value=0)
 
         if st.button("Check"):
@@ -153,7 +156,7 @@ def motoristas():
             else:
                 saida_cd = registrar_horario()
                 # Atualiza a saída e quantidade de remessas no SQLite
-                conn = sqlite3.connect('dados_motoristas.db')
+                conn = sqlite3.connect('dados_motoristas2.db')
                 c = conn.cursor()
                 c.execute('''UPDATE motoristas SET fim_carregamento = ?, quantidade_remessas = ? WHERE placa = ?''', 
                           (saida_cd, quantidade_remessas, placa))
@@ -163,84 +166,88 @@ def motoristas():
                 st.success("Check-in registrado com sucesso!")
 
 def registros_sqlite():
-    conn = sqlite3.connect('dados_motoristas.db')
+    conn = sqlite3.connect('dados_motoristas2.db')
     c = conn.cursor()
     
     c.execute("SELECT * FROM motoristas")
-    registros = c.fetchall()  # Obtém todos os registros
+    registros = c.fetchall()
     
     conn.close()
     
     if registros:
-        df = pd.DataFrame(registros, columns=['ID', 'Unidade', 'Motorista', 'Placa', 'Chegada CD', 'Início do Carregamento', 'Fim do Carregamento', 'Quantidade Remessas'])
-        # Remove duplicatas mantendo a última ocorrência de cada motorista
+        df = pd.DataFrame(registros, columns=['ID', 'Unidade', 'Nome', 'Placa', 'Chegada CD', 'Início do Carregamento', 'Fim do Carregamento', 'Quantidade Remessas'])
         df_unique = df.drop_duplicates(subset='Placa', keep='last')
-        return df_unique  # Retorna o DataFrame sem exibir aqui
+        return df_unique
     else:
-        return pd.DataFrame()  # Retorna um DataFrame vazio se não houver registros
+        return pd.DataFrame()
 
+# Função para enviar dados em batch
+def enviar_dados_em_batch(dados):
+    batch_requests = []
+
+    for index, registro in dados.iterrows():
+        # Verifica se todos os campos estão preenchidos e se "Quantidade Remessas" é maior que 0
+        if all(pd.notna(registro[1:])) and registro['Quantidade Remessas'] > 0:
+            linha_dados = [
+                registro['Unidade'], 
+                registro['Nome'],
+                registro['Placa'], 
+                registro['Chegada CD'], 
+                registro['Início do Carregamento'], 
+                registro['Fim do Carregamento'], 
+                registro['Quantidade Remessas']
+            ]
+            batch_requests.append(linha_dados)
+
+    if batch_requests:
+        worksheet.append_rows(batch_requests)
+        print(f"{len(batch_requests)} registros enviados para o Google Sheets com sucesso!")
+    else:
+        print("Nenhum dado válido para enviar.")
+
+# Função para visualizar os registros
 def registros():
     st.title("Visualização de Registros")
     st.write("Os dados são atualizados em tempo real conforme o processo de check-in é concluído.")
 
-    # Chama a função para visualizar os registros do SQLite
     df_registros = registros_sqlite()
 
-    if df_registros.empty:  # Verifica se o DataFrame está vazio
+    if df_registros.empty:
         st.warning("Nenhum registro encontrado.")
-        return  # Se estiver vazio, sai da função e não exibe mais nada
-    
-    # Obter a lista de unidades únicas
-    unidades = df_registros['Unidade'].unique().tolist()
+        return
 
-    # Adicionar um seletor de unidades para o usuário escolher
+    unidades = df_registros['Unidade'].unique().tolist()
     unidade_selecionada = st.selectbox("Selecione a Unidade para filtrar", ["Todas"] + unidades)
 
-    # Filtrar os dados pelo valor selecionado
     if unidade_selecionada != "Todas":
         df_registros = df_registros[df_registros['Unidade'] == unidade_selecionada]
 
-    # Exibe o DataFrame filtrado
     st.dataframe(df_registros)
 
-    # Inicializa contadores
-    enviados = 0
-    erros = 0
+    # Lista para armazenar dados que precisam ser enviados
+    dados_para_enviar = []
 
-    # Verifica e envia dados automaticamente para o Google Sheets
+    # Verifica e coleta dados para envio
     for index, registro in df_registros.iterrows():
-        # Verifica se todos os campos estão preenchidos e se "Quantidade Remessas" é maior que 0
-        if all(pd.notna(registro[1:])) and registro['Quantidade Remessas'] > 0:  # Ignora o primeiro campo (ID)
-            # Monta o dicionário de dados
-            dados_motorista = {
-                'Unidade': registro['Unidade'],
-                'Nome': registro['Motorista'],
-                'Placa': registro['Placa'],
-                'Chegada CD': registro['Chegada CD'],
-                'Início do Carregamento': registro['Início do Carregamento'],
-                'Fim do Carregamento': registro['Fim do Carregamento'],
-                'Quantidade Remessas': registro['Quantidade Remessas']
-            }
+        dados_motorista = {
+            'Unidade': registro['Unidade'],
+            'Nome': registro['Nome'],
+            'Placa': registro['Placa'],
+            'Chegada CD': registro['Chegada CD'],
+            'Início do Carregamento': registro['Início do Carregamento'],
+            'Fim do Carregamento': registro['Fim do Carregamento'],
+            'Quantidade Remessas': registro['Quantidade Remessas']
+        }
 
-            # Verifica se os dados já existem no Google Sheets
-            if not dados_existentes(dados_motorista):
-                try:
-                    salvar_sheets(dados_motorista)  # Envia os dados para o Google Sheets
-                    enviados += 1
-                except Exception as e:
-                    st.error(f"Erro ao enviar dados da placa {registro['Placa']}: {str(e)}")
-                    erros += 1
-            else:
-                st.warning(f"Registro já existente para a placa {registro['Placa']}. Não enviado.")
+        if not dados_existentes(dados_motorista):
+            dados_para_enviar.append(dados_motorista)
         else:
-            # Mensagem se o registro não está completo
-            st.warning(f"Registro incompleto para a placa {registro['Placa']}. Não enviado.")
+            st.warning(f"Registro já existente para a placa {registro['Placa']}. Não enviado.")
 
-    # Mensagens de feedback
-    if enviados > 0:
-        st.success(f"{enviados} registros enviados automaticamente para o Google Sheets com sucesso!")
-    if erros > 0:
-        st.error(f"{erros} registros não foram enviados devido a erros.")
+    if dados_para_enviar:
+        enviar_dados_em_batch(pd.DataFrame(dados_para_enviar))
+    else:
+        st.warning("Nenhum dado válido para enviar.")
 
 # Chama a função para criar a tabela ao iniciar o app
 database()
