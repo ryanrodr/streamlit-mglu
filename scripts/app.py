@@ -185,23 +185,29 @@ def registros_sqlite():
     else:
         return pd.DataFrame()
 
-# Função para enviar dados em batch
+# Variável global para armazenar as placas que já foram enviadas
+if 'placas_enviadas' not in st.session_state:
+    st.session_state['placas_enviadas'] = set()
+
 def enviar_dados_em_batch(dados):
     batch_requests = []
-
+    
     for index, registro in dados.iterrows():
         # Verifica se todos os campos estão preenchidos e se "Quantidade Remessas" é maior que 0
         if all(pd.notna(registro[1:])) and registro['Quantidade Remessas'] > 0:
-            linha_dados = [
-                registro['Unidade'], 
-                registro['Nome'],
-                registro['Placa'], 
-                registro['Chegada CD'],
-                registro['Início do Carregamento'],
-                registro['Fim do Carregamento'], 
-                registro['Quantidade Remessas']
-            ]
-            batch_requests.append(linha_dados)
+            placa = registro['Placa']
+            if placa not in st.session_state['placas_enviadas']:  # Verifica se já foi enviado
+                linha_dados = [
+                    registro['Unidade'], 
+                    registro['Nome'],
+                    registro['Placa'], 
+                    registro['Chegada CD'],
+                    registro['Início do Carregamento'],
+                    registro['Fim do Carregamento'], 
+                    registro['Quantidade Remessas']
+                ]
+                batch_requests.append(linha_dados)
+                st.session_state['placas_enviadas'].add(placa)  # Adiciona a placa à lista de enviadas
 
     if batch_requests:
         worksheet.append_rows(batch_requests)
