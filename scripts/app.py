@@ -58,30 +58,34 @@ def salvar_database(data):
     conn.commit()
     conn.close()
 
-def dados_existentes(dados_motorista):
+@st.cache_data(ttl=600)  # Cache de 10 minutos
+def obter_dados_planilha():
     try:
         existing_data = worksheet.get_all_records()
-        df_existing = pd.DataFrame(existing_data)
-
-        # Verifique se o DataFrame está vazio
-        if df_existing.empty:
-            st.warning("A planilha está vazia. Nenhum registro encontrado.")
-            return False  # Se a planilha está vazia, consideramos que não existem dados
-
-        # Verifique as colunas carregadas
-        if 'Unidade' not in df_existing.columns or 'Nome' not in df_existing.columns or 'Placa' not in df_existing.columns:
-            st.error("As colunas necessárias não estão disponíveis na planilha.")
-            return True  # Para evitar duplicatas, retornar True se não conseguir acessar
-
-        # Verificar se o registro já existe
-        return df_existing[
-            (df_existing['Unidade'] == dados_motorista['Unidade']) &
-            (df_existing['Nome'] == dados_motorista['Nome']) &
-            (df_existing['Placa'] == dados_motorista['Placa'])
-        ].shape[0] > 0
+        return pd.DataFrame(existing_data)
     except Exception as e:
         st.error(f"Ocorreu um erro ao ler os dados da planilha: {str(e)}")
-        return True  # Retornar True para evitar que dados duplicados sejam enviados
+        return pd.DataFrame()
+
+def dados_existentes(dados_motorista):
+    df_existing = obter_dados_planilha()
+
+    # Verifique se o DataFrame está vazio
+    if df_existing.empty:
+        st.warning("A planilha está vazia. Nenhum registro encontrado.")
+        return False
+
+    # Verifique as colunas carregadas
+    if 'Unidade' not in df_existing.columns or 'Nome' not in df_existing.columns or 'Placa' not in df_existing.columns:
+        st.error("As colunas necessárias não estão disponíveis na planilha.")
+        return True  # Para evitar duplicatas, retornar True se não conseguir acessar
+
+    # Verificar se o registro já existe
+    return df_existing[
+        (df_existing['Unidade'] == dados_motorista['Unidade']) &
+        (df_existing['Nome'] == dados_motorista['Nome']) &
+        (df_existing['Placa'] == dados_motorista['Placa'])
+    ].shape[0] > 0
 
 def motoristas():
     st.title("Check-in de Motoristas")
@@ -192,8 +196,8 @@ def enviar_dados_em_batch(dados):
                 registro['Unidade'], 
                 registro['Nome'],
                 registro['Placa'], 
-                registro['Chegada CD'], 
-                registro['Início do Carregamento'], 
+                registro['Chegada CD'],
+                registro['Início do Carregamento'],
                 registro['Fim do Carregamento'], 
                 registro['Quantidade Remessas']
             ]
@@ -201,9 +205,9 @@ def enviar_dados_em_batch(dados):
 
     if batch_requests:
         worksheet.append_rows(batch_requests)
-        print(f"{len(batch_requests)} registros enviados para o Google Sheets com sucesso!")
+        st.success(f"{len(batch_requests)} registros enviados para o Google Sheets com sucesso!")
     else:
-        print("Nenhum dado válido para enviar.")
+        st.warning("Nenhum dado válido para enviar.")
 
 # Função para visualizar os registros
 def registros():
