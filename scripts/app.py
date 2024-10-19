@@ -166,7 +166,7 @@ def motoristas():
                 st.success("Check-in registrado com sucesso!")
 
 def registros_sqlite():
-    conn = sqlite3.connect('dados_motoristas2.db')
+    conn = sqlite3.connect('dados_motoristas.db')
     c = conn.cursor()
     
     c.execute("SELECT * FROM motoristas")
