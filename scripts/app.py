@@ -80,11 +80,12 @@ def dados_existentes(dados_motorista):
         st.error("As colunas necessárias não estão disponíveis na planilha.")
         return True  # Para evitar duplicatas, retornar True se não conseguir acessar
 
-    # Verificar se o registro já existe
+    # Verificar se o registro já existe para o mesmo dia
     return df_existing[
         (df_existing['Unidade'] == dados_motorista['Unidade']) &
         (df_existing['Nome'] == dados_motorista['Nome']) &
-        (df_existing['Placa'] == dados_motorista['Placa'])
+        (df_existing['Placa'] == dados_motorista['Placa']) &
+        (df_existing['Chegada CD'].str[:10] == dados_motorista['Chegada CD'][:10])  # Verifica se a data (primeiros 10 caracteres) é a mesma
     ].shape[0] > 0
 
 def motoristas():
@@ -113,7 +114,7 @@ def motoristas():
     if subpagina == "Chegada CD":
         filial = st.selectbox("Filial", lista_filiais, index=0)
         nome = st.text_input("Nome do Motorista").upper()
-        placa = st.text_input("Placa do Veículo", '').upper()
+        placa = st.text_input("Placa do Veículo", '').upper().replace(" ", "")
 
         if st.button("Check"):
             if not placa:  # Valida se a placa foi inserida
@@ -134,7 +135,7 @@ def motoristas():
 
     # Step 2: Coleta de informações de entrada no CD
     elif subpagina == "Início do Carregamento":
-        placa = st.text_input("Placa do Veículo", '').upper()
+        placa = st.text_input("Placa do Veículo", '').upper().replace(" ", "")
         if st.button("Check"):
             if not placa:  # Valida se a placa foi inserida
                 st.error("Por favor, insira a placa do veículo.")
@@ -151,7 +152,7 @@ def motoristas():
 
     # Step 3: Coleta de informações de saída do CD e quantidade de remessas
     elif subpagina == "Fim do Carregamento":
-        placa = st.text_input("Placa do Veículo", '').upper()
+        placa = st.text_input("Placa do Veículo", '').upper().replace(" ", "")
         quantidade_remessas = st.number_input("Quantidade de Remessas", min_value=0, value=0)
 
         if st.button("Check"):
