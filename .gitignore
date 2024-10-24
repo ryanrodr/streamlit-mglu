@@ -1,4 +1,5 @@
 .venv
 .env
 credenciais
+dados
 dados_motoristas.db
